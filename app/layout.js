@@ -30,6 +30,7 @@ export default function RootLayout({ children }) {
               <a href="/">Home</a>
               <a href="/blocks">Blocks</a>
               <a href="/transactions">Transactions</a>
+              <a href="/tokens">Tokens</a>
             </div>
           </div>
         </nav>
