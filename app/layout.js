@@ -1,4 +1,5 @@
 import './globals.css';
+import ThemeToggle from '@/components/ThemeToggle';
 
 export const metadata = {
   title: 'CPNV Scan — Blockchain Explorer',
@@ -20,8 +21,8 @@ export default function RootLayout({ children }) {
             {/* CPNV Logo */}
             <a href="/" style={{ display: 'flex', alignItems: 'center', gap: 10, textDecoration: 'none' }}>
               <img src="/cpnv-logo.png" alt="CPNV" style={{ height: 28 }} />
-              <span style={{ fontSize: 16, fontWeight: 700, color: '#1e2022', letterSpacing: '-0.01em' }}>
-                CPNV<span style={{ color: '#00a650' }}>Scan</span>
+              <span style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-dark)', letterSpacing: '-0.01em' }}>
+                CPNV<span style={{ color: 'var(--green)' }}>Scan</span>
               </span>
             </a>
 
@@ -33,6 +34,7 @@ export default function RootLayout({ children }) {
               <a href="/tokens">Tokens</a>
               <a href="/network">Network</a>
             </div>
+            <ThemeToggle />
           </div>
         </nav>
 
