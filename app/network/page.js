@@ -9,11 +9,10 @@ import { IconArrowLeft, IconScan } from '@/components/Icons';
 export default function NetworkPage() {
     const svgRef = useRef(null);
     const containerRef = useRef(null);
+    const tooltipRef = useRef(null);
     const [graphData, setGraphData] = useState(null);
     const [scanning, setScanning] = useState(true);
     const [progress, setProgress] = useState({ phase: 'scanning', scanned: 0, total: 1, addressCount: 0, edgeCount: 0 });
-    const [selectedNode, setSelectedNode] = useState(null);
-    const simulationRef = useRef(null);
 
     useEffect(() => {
         let aborted = false;
@@ -45,6 +44,7 @@ export default function NetworkPage() {
         const container = containerRef.current;
         const width = container.clientWidth;
         const height = 600;
+        const tooltip = tooltipRef.current;
 
         // Clear previous
         d3.select(svgRef.current).selectAll('*').remove();
@@ -72,22 +72,29 @@ export default function NetworkPage() {
         const nodes = graphData.nodes.map(n => ({ ...n }));
         const edges = graphData.edges.map(e => ({ ...e }));
 
-        // Force simulation
+        // Force simulation — alphaDecay high so it settles quickly
         const simulation = d3.forceSimulation(nodes)
-            .force('link', d3.forceLink(edges).id(d => d.id).distance(100).strength(0.3))
-            .force('charge', d3.forceManyBody().strength(-200))
+            .force('link', d3.forceLink(edges).id(d => d.id).distance(120).strength(0.3))
+            .force('charge', d3.forceManyBody().strength(-250))
             .force('center', d3.forceCenter(width / 2, height / 2))
-            .force('collision', d3.forceCollide().radius(d => radiusScale(d.balance) + 4));
+            .force('collision', d3.forceCollide().radius(d => radiusScale(d.balance) + 6))
+            .alphaDecay(0.03);
 
-        simulationRef.current = simulation;
+        // Glow filter
+        const defs = svg.append('defs');
+        const filter = defs.append('filter').attr('id', 'glow');
+        filter.append('feGaussianBlur').attr('stdDeviation', '2.5').attr('result', 'coloredBlur');
+        const feMerge = filter.append('feMerge');
+        feMerge.append('feMergeNode').attr('in', 'coloredBlur');
+        feMerge.append('feMergeNode').attr('in', 'SourceGraphic');
 
         // Links
         const link = g.append('g')
             .selectAll('line')
             .data(edges)
             .join('line')
-            .attr('stroke', '#c0c0c0')
-            .attr('stroke-opacity', 0.5)
+            .attr('stroke', '#c8c8c8')
+            .attr('stroke-opacity', 0.4)
             .attr('stroke-width', d => widthScale(d.weight));
 
         // Node groups
@@ -112,14 +119,6 @@ export default function NetworkPage() {
                     d.fy = null;
                 }));
 
-        // Glow filter
-        const defs = svg.append('defs');
-        const filter = defs.append('filter').attr('id', 'glow');
-        filter.append('feGaussianBlur').attr('stdDeviation', '3').attr('result', 'coloredBlur');
-        const feMerge = filter.append('feMerge');
-        feMerge.append('feMergeNode').attr('in', 'coloredBlur');
-        feMerge.append('feMergeNode').attr('in', 'SourceGraphic');
-
         // Node circles
         node.append('circle')
             .attr('r', d => radiusScale(d.balance))
@@ -131,22 +130,36 @@ export default function NetworkPage() {
             .attr('stroke-width', 2)
             .attr('filter', 'url(#glow)')
             .on('mouseover', function (event, d) {
+                // Pure DOM updates — no React setState to avoid re-renders / trembling
                 d3.select(this).attr('stroke', '#00a650').attr('stroke-width', 3);
-                // Highlight connected edges
-                link.attr('stroke', l => (l.source.id === d.id || l.target.id === d.id) ? '#00a650' : '#c0c0c0')
-                    .attr('stroke-opacity', l => (l.source.id === d.id || l.target.id === d.id) ? 0.9 : 0.2);
-                setSelectedNode(d);
+                link.attr('stroke', l => (l.source.id === d.id || l.target.id === d.id) ? '#00a650' : '#c8c8c8')
+                    .attr('stroke-opacity', l => (l.source.id === d.id || l.target.id === d.id) ? 0.8 : 0.15);
+
+                // Show DOM tooltip
+                if (tooltip) {
+                    tooltip.style.display = 'block';
+                    tooltip.innerHTML = `
+            <div style="font-family:monospace;font-size:12px;color:#00a650;font-weight:600;margin-bottom:4px">${d.id}</div>
+            <div style="font-size:12px;color:#333">Balance: <strong>${d.balance.toFixed(4)} ETH</strong></div>
+          `;
+                }
+            })
+            .on('mousemove', function (event) {
+                if (tooltip) {
+                    tooltip.style.left = (event.clientX + 12) + 'px';
+                    tooltip.style.top = (event.clientY - 10) + 'px';
+                }
             })
             .on('mouseout', function () {
                 d3.select(this).attr('stroke', '#fff').attr('stroke-width', 2);
-                link.attr('stroke', '#c0c0c0').attr('stroke-opacity', 0.5);
-                setSelectedNode(null);
+                link.attr('stroke', '#c8c8c8').attr('stroke-opacity', 0.4);
+                if (tooltip) tooltip.style.display = 'none';
             })
             .on('click', (event, d) => {
                 window.open(`/address/${d.id}`, '_blank');
             });
 
-        // Node labels (only for big nodes)
+        // Node labels (only for bigger nodes)
         node.append('text')
             .text(d => d.label)
             .attr('text-anchor', 'middle')
@@ -231,25 +244,13 @@ export default function NetworkPage() {
                         <strong style={{ color: 'var(--text-dark)' }}>{graphData.edges.length}</strong> interactions
                     </span>
                     <span style={{ fontSize: 11, color: 'var(--text-light)' }}>
-                        Node size = ETH balance · Lines = transactions between addresses · Click a node to view address
+                        Node size = ETH balance · Lines = transactions · Drag nodes · Scroll to zoom · Click to view
                     </span>
                 </div>
             )}
 
-            {/* Selected node tooltip */}
-            {selectedNode && (
-                <div className="card" style={{ padding: '12px 20px', borderColor: 'var(--green)', background: 'var(--green-bg)' }}>
-                    <div style={{ display: 'flex', gap: 16, alignItems: 'center', flexWrap: 'wrap' }}>
-                        <span style={{ fontFamily: 'monospace', fontSize: 13, color: 'var(--green)', fontWeight: 600 }}>{selectedNode.id}</span>
-                        <span style={{ fontSize: 12, color: 'var(--text-body)' }}>
-                            Balance: <strong>{selectedNode.balance.toFixed(4)} ETH</strong>
-                        </span>
-                    </div>
-                </div>
-            )}
-
             {/* Graph SVG */}
-            <div className="card" ref={containerRef} style={{ overflow: 'hidden', background: '#fafbfc' }}>
+            <div className="card" ref={containerRef} style={{ overflow: 'hidden', background: '#fafbfc', position: 'relative' }}>
                 {!graphData && !scanning && (
                     <div style={{ padding: 60, textAlign: 'center', color: 'var(--text-muted)' }}>
                         No data available.
@@ -257,6 +258,23 @@ export default function NetworkPage() {
                 )}
                 <svg ref={svgRef} style={{ display: 'block', width: '100%', minHeight: 600 }} />
             </div>
+
+            {/* Floating tooltip (DOM, not React state — avoids re-render trembling) */}
+            <div
+                ref={tooltipRef}
+                style={{
+                    display: 'none',
+                    position: 'fixed',
+                    pointerEvents: 'none',
+                    zIndex: 9999,
+                    background: '#fff',
+                    border: '1px solid var(--border-color)',
+                    borderRadius: 8,
+                    padding: '10px 14px',
+                    boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
+                    maxWidth: 360,
+                }}
+            />
         </div>
     );
 }
