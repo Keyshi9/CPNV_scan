@@ -25,6 +25,7 @@ function timeAgo(timestamp) {
 function truncate(str, start = 8, end = 4) {
   if (!str) return '';
   if (str.length <= start + end + 3) return str;
+  if (end === 0) return `${str.slice(0, start)}...`;
   return `${str.slice(0, start)}...${str.slice(-end)}`;
 }
 
@@ -273,7 +274,7 @@ export default function Dashboard() {
                   <div className="item-info">
                     <div className="item-primary">
                       <Link href={`/tx/${tx.hash}`} style={{ fontFamily: 'monospace', fontSize: 13 }}>
-                        {truncate(tx.hash, 14, 0)}
+                        {truncate(tx.hash, 10, 6)}
                       </Link>
                       <span style={{ fontWeight: 400, color: 'var(--text-light)', fontSize: 12, marginLeft: 8 }}>
                         {tx.timestamp ? timeAgo(tx.timestamp) : ''}

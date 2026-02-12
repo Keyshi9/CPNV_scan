@@ -271,12 +271,17 @@ a:hover {
 .item-primary {
   font-size: 13px;
   font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .item-secondary {
   font-size: 12px;
   color: var(--text-muted);
   margin-top: 3px;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .item-badge {
