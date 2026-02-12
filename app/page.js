@@ -3,12 +3,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import {
-  getLatestBlockNumber,
-  getGasPrice,
-  getRecentBlocks,
-  getRecentTransactions
-} from '@/lib/ethereum';
 import { IconBlock, IconTx, IconGas, IconGlobe, IconLink, IconChart, IconShield, IconSearch } from '@/components/Icons';
 import { ethers } from 'ethers';
 
@@ -42,16 +36,13 @@ export default function Dashboard() {
   const fetchData = useCallback(async () => {
     try {
       setError(null);
-      const [blockNumber, gas, recentBlocks, recentTxs] = await Promise.all([
-        getLatestBlockNumber(),
-        getGasPrice(),
-        getRecentBlocks(6),
-        getRecentTransactions(6)
-      ]);
-      setLatestBlock(blockNumber);
-      setGasPrice(gas);
-      setBlocks(recentBlocks.filter(Boolean));
-      setTransactions(recentTxs);
+      const res = await fetch('/api/cache?type=dashboard');
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+      setLatestBlock(data.latestBlock || 0);
+      setGasPrice(data.gasPrice || '0');
+      setBlocks(data.blocks || []);
+      setTransactions(data.transactions || []);
     } catch (err) {
       console.error(err);
       setError("Impossible de se connecter au nœud RPC. Vérifiez que le réseau est accessible.");
@@ -239,7 +230,7 @@ export default function Dashboard() {
                       Miner: <Link href={`/address/${block.miner}`}>{truncate(block.miner, 8, 4)}</Link>
                       <br />
                       <Link href={`/block/${block.number}`} style={{ color: 'var(--green)' }}>
-                        {block.transactions.length} txns
+                        {block.txCount || 0} txns
                       </Link>
                       <span style={{ color: 'var(--text-light)' }}> in 12 secs</span>
                     </div>
