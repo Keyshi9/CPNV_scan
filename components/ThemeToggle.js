@@ -1,12 +1,12 @@
 "use client";
 
 import { useState, useEffect } from 'react';
+import { IconMoon, IconSun } from '@/components/Icons';
 
 export default function ThemeToggle() {
     const [dark, setDark] = useState(false);
 
     useEffect(() => {
-        // Read from localStorage on mount
         const saved = localStorage.getItem('cpnv-theme');
         if (saved === 'dark') {
             setDark(true);
@@ -28,7 +28,7 @@ export default function ThemeToggle() {
 
     return (
         <button onClick={toggle} className="theme-toggle" title={dark ? 'Light mode' : 'Dark mode'}>
-            {dark ? '☀️' : '🌙'}
+            {dark ? <IconSun size={16} /> : <IconMoon size={16} />}
         </button>
     );
 }
