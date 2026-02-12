@@ -1,13 +1,13 @@
 "use client";
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { scanAllTokens } from '@/lib/ethereum';
-import { IconArrowLeft, IconScan } from '@/components/Icons';
+import { IconArrowLeft } from '@/components/Icons';
 
 function truncate(str, start = 10, end = 6) {
     if (!str) return '';
     if (str.length <= start + end + 3) return str;
+    if (end === 0) return `${str.slice(0, start)}...`;
     return `${str.slice(0, start)}...${str.slice(-end)}`;
 }
 
@@ -21,35 +21,26 @@ function formatSupply(val) {
 
 export default function TokensPage() {
     const [tokens, setTokens] = useState([]);
-    const [scanning, setScanning] = useState(true);
-    const [progress, setProgress] = useState({ phase: 'scanning', scanned: 0, total: 1, contractsFound: 0 });
-    const scanAbort = useRef(false);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(null);
+    const [lastSynced, setLastSynced] = useState(null);
 
     useEffect(() => {
-        scanAbort.current = false;
-
-        async function scan() {
+        async function fetchData() {
             try {
-                const result = await scanAllTokens((p) => {
-                    if (scanAbort.current) return;
-                    setProgress(p);
-                    if (p.tokens && p.tokens.length > 0) {
-                        setTokens([...p.tokens].sort((a, b) => b.totalSupplyFormatted - a.totalSupplyFormatted));
-                    }
-                });
-                setTokens(result);
-                setScanning(false);
+                const res = await fetch('/api/cache?type=tokens');
+                const data = await res.json();
+                if (data.error) throw new Error(data.error);
+                setTokens(data.tokens);
+                setLastSynced(data.lastSynced);
+                setLoading(false);
             } catch (err) {
-                console.error(err);
-                setScanning(false);
+                setError(err.message);
+                setLoading(false);
             }
         }
-
-        scan();
-        return () => { scanAbort.current = true; };
+        fetchData();
     }, []);
-
-    const progressPercent = progress.total > 0 ? Math.round((progress.scanned / progress.total) * 100) : 0;
 
     return (
         <div className="max-w-7xl mx-auto px-4 py-8 space-y-6">
@@ -58,44 +49,34 @@ export default function TokensPage() {
                 <h1 style={{ fontSize: 20, fontWeight: 700, color: 'var(--text-dark)' }}>Token Tracker</h1>
             </div>
 
-            {/* Scan Progress */}
-            {scanning && (
+            {loading && (
                 <div className="card" style={{ padding: 20 }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                        <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-body)', display: 'flex', alignItems: 'center', gap: 6 }}>
-                            <IconScan size={14} color="var(--green)" />
-                            {progress.phase === 'scanning'
-                                ? 'Phase 1: Scanning blocks for contracts...'
-                                : `Phase 2: Checking ${progress.total} contracts for ERC-20...`
-                            }
-                        </span>
-                        <span style={{ fontSize: 12, fontFamily: 'monospace', color: 'var(--green)' }}>
-                            {progress.scanned.toLocaleString()} / {progress.total.toLocaleString()} ({progressPercent}%)
-                        </span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <div className="skeleton" style={{ width: 20, height: 20, borderRadius: '50%' }}></div>
+                        <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>Loading cached data...</span>
                     </div>
-                    <div className="progress-bar">
-                        <div className="progress-fill" style={{ width: `${progressPercent}%` }}></div>
-                    </div>
-                    <p style={{ fontSize: 11, color: 'var(--text-light)', marginTop: 8 }}>
-                        {progress.contractsFound} contract(s) found · {tokens.length} ERC-20 token(s) detected
-                    </p>
                 </div>
             )}
 
-            {/* Tokens Table */}
+            {error && (
+                <div className="error-banner">
+                    <p style={{ color: 'var(--red)', fontWeight: 600 }}>Error: {error}</p>
+                </div>
+            )}
+
             <div className="card">
                 <div className="card-header">
-                    <span>ERC-20 Tokens ({tokens.length}{scanning ? '+' : ''})</span>
-                    {!scanning && (
+                    <span>ERC-20 Tokens ({tokens.length})</span>
+                    {lastSynced && (
                         <span style={{ fontSize: 11, color: 'var(--text-light)' }}>
-                            Sorted by Total Supply (largest first)
+                            Synced: {new Date(lastSynced).toLocaleTimeString()}
                         </span>
                     )}
                 </div>
                 <div style={{ overflowX: 'auto' }}>
-                    {tokens.length === 0 ? (
+                    {tokens.length === 0 && !loading ? (
                         <div style={{ padding: 48, textAlign: 'center', color: 'var(--text-muted)' }}>
-                            {scanning ? 'Scanning blockchain for tokens...' : 'No ERC-20 tokens found on this blockchain.'}
+                            No ERC-20 tokens found on this blockchain.
                         </div>
                     ) : (
                         <table>
@@ -129,8 +110,7 @@ export default function TokensPage() {
                                         <td>
                                             <span style={{
                                                 background: 'var(--green-bg)', color: 'var(--green)',
-                                                padding: '3px 10px', borderRadius: 6,
-                                                fontSize: 12, fontWeight: 600
+                                                padding: '3px 10px', borderRadius: 6, fontSize: 12, fontWeight: 600
                                             }}>
                                                 {token.symbol}
                                             </span>

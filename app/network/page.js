@@ -3,38 +3,30 @@
 import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import * as d3 from 'd3';
-import { getNetworkGraphData } from '@/lib/ethereum';
-import { IconArrowLeft, IconScan } from '@/components/Icons';
+import { IconArrowLeft } from '@/components/Icons';
 
 export default function NetworkPage() {
     const svgRef = useRef(null);
     const containerRef = useRef(null);
     const tooltipRef = useRef(null);
     const [graphData, setGraphData] = useState(null);
-    const [scanning, setScanning] = useState(true);
-    const [progress, setProgress] = useState({ phase: 'scanning', scanned: 0, total: 1, addressCount: 0, edgeCount: 0 });
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(null);
 
     useEffect(() => {
-        let aborted = false;
-
-        async function scan() {
+        async function fetchData() {
             try {
-                const data = await getNetworkGraphData((p) => {
-                    if (aborted) return;
-                    setProgress(p);
-                });
-                if (!aborted) {
-                    setGraphData(data);
-                    setScanning(false);
-                }
+                const res = await fetch('/api/cache?type=network');
+                const data = await res.json();
+                if (data.error) throw new Error(data.error);
+                setGraphData({ nodes: data.nodes, edges: data.edges });
+                setLoading(false);
             } catch (err) {
-                console.error(err);
-                if (!aborted) setScanning(false);
+                setError(err.message);
+                setLoading(false);
             }
         }
-
-        scan();
-        return () => { aborted = true; };
+        fetchData();
     }, []);
 
     // Render D3 force graph when data is ready
@@ -46,7 +38,6 @@ export default function NetworkPage() {
         const height = 600;
         const tooltip = tooltipRef.current;
 
-        // Clear previous
         d3.select(svgRef.current).selectAll('*').remove();
 
         const svg = d3.select(svgRef.current)
@@ -54,25 +45,19 @@ export default function NetworkPage() {
             .attr('height', height)
             .attr('viewBox', [0, 0, width, height]);
 
-        // Add zoom
         const g = svg.append('g');
         svg.call(d3.zoom().scaleExtent([0.2, 5]).on('zoom', (event) => {
             g.attr('transform', event.transform);
         }));
 
-        // Scale node radius by balance
         const maxBalance = Math.max(...graphData.nodes.map(n => n.balance), 1);
         const radiusScale = d3.scaleSqrt().domain([0, maxBalance]).range([6, 45]);
-
-        // Scale edge width by weight
         const maxWeight = Math.max(...graphData.edges.map(e => e.weight), 1);
         const widthScale = d3.scaleLinear().domain([1, maxWeight]).range([0.8, 4]);
 
-        // Copy data to avoid mutation
         const nodes = graphData.nodes.map(n => ({ ...n }));
         const edges = graphData.edges.map(e => ({ ...e }));
 
-        // Force simulation — alphaDecay high so it settles quickly
         const simulation = d3.forceSimulation(nodes)
             .force('link', d3.forceLink(edges).id(d => d.id).distance(120).strength(0.3))
             .force('charge', d3.forceManyBody().strength(-250))
@@ -80,7 +65,6 @@ export default function NetworkPage() {
             .force('collision', d3.forceCollide().radius(d => radiusScale(d.balance) + 6))
             .alphaDecay(0.03);
 
-        // Glow filter
         const defs = svg.append('defs');
         const filter = defs.append('filter').attr('id', 'glow');
         filter.append('feGaussianBlur').attr('stdDeviation', '2.5').attr('result', 'coloredBlur');
@@ -88,7 +72,6 @@ export default function NetworkPage() {
         feMerge.append('feMergeNode').attr('in', 'coloredBlur');
         feMerge.append('feMergeNode').attr('in', 'SourceGraphic');
 
-        // Links
         const link = g.append('g')
             .selectAll('line')
             .data(edges)
@@ -97,7 +80,6 @@ export default function NetworkPage() {
             .attr('stroke-opacity', 0.4)
             .attr('stroke-width', d => widthScale(d.weight));
 
-        // Node groups
         const node = g.append('g')
             .selectAll('g')
             .data(nodes)
@@ -106,36 +88,24 @@ export default function NetworkPage() {
             .call(d3.drag()
                 .on('start', (event, d) => {
                     if (!event.active) simulation.alphaTarget(0.3).restart();
-                    d.fx = d.x;
-                    d.fy = d.y;
+                    d.fx = d.x; d.fy = d.y;
                 })
-                .on('drag', (event, d) => {
-                    d.fx = event.x;
-                    d.fy = event.y;
-                })
+                .on('drag', (event, d) => { d.fx = event.x; d.fy = event.y; })
                 .on('end', (event, d) => {
                     if (!event.active) simulation.alphaTarget(0);
-                    d.fx = null;
-                    d.fy = null;
+                    d.fx = null; d.fy = null;
                 }));
 
-        // Node circles
         node.append('circle')
             .attr('r', d => radiusScale(d.balance))
-            .attr('fill', d => {
-                const intensity = Math.min(d.balance / maxBalance, 1);
-                return d3.interpolateRgb('#69d49e', '#00673a')(intensity);
-            })
+            .attr('fill', d => d3.interpolateRgb('#69d49e', '#00673a')(Math.min(d.balance / maxBalance, 1)))
             .attr('stroke', '#fff')
             .attr('stroke-width', 2)
             .attr('filter', 'url(#glow)')
             .on('mouseover', function (event, d) {
-                // Pure DOM updates — no React setState to avoid re-renders / trembling
                 d3.select(this).attr('stroke', '#00a650').attr('stroke-width', 3);
                 link.attr('stroke', l => (l.source.id === d.id || l.target.id === d.id) ? '#00a650' : '#c8c8c8')
                     .attr('stroke-opacity', l => (l.source.id === d.id || l.target.id === d.id) ? 0.8 : 0.15);
-
-                // Show DOM tooltip
                 if (tooltip) {
                     tooltip.style.display = 'block';
                     tooltip.innerHTML = `
@@ -155,22 +125,16 @@ export default function NetworkPage() {
                 link.attr('stroke', '#c8c8c8').attr('stroke-opacity', 0.4);
                 if (tooltip) tooltip.style.display = 'none';
             })
-            .on('click', (event, d) => {
-                window.open(`/address/${d.id}`, '_blank');
-            });
+            .on('click', (event, d) => { window.open(`/address/${d.id}`, '_blank'); });
 
-        // Node labels (only for bigger nodes)
         node.append('text')
             .text(d => d.label)
             .attr('text-anchor', 'middle')
             .attr('dy', d => radiusScale(d.balance) + 14)
-            .attr('font-size', 9)
-            .attr('fill', '#6c757d')
-            .attr('font-family', 'monospace')
+            .attr('font-size', 9).attr('fill', '#6c757d').attr('font-family', 'monospace')
             .attr('pointer-events', 'none')
             .style('display', d => radiusScale(d.balance) > 12 ? 'block' : 'none');
 
-        // Balance text inside big nodes
         node.append('text')
             .text(d => {
                 if (radiusScale(d.balance) < 18) return '';
@@ -178,30 +142,18 @@ export default function NetworkPage() {
                 if (d.balance >= 1) return d.balance.toFixed(1);
                 return '';
             })
-            .attr('text-anchor', 'middle')
-            .attr('dy', 4)
+            .attr('text-anchor', 'middle').attr('dy', 4)
             .attr('font-size', d => Math.min(radiusScale(d.balance) * 0.55, 12))
-            .attr('fill', '#fff')
-            .attr('font-weight', 700)
-            .attr('pointer-events', 'none');
+            .attr('fill', '#fff').attr('font-weight', 700).attr('pointer-events', 'none');
 
-        // Tick
         simulation.on('tick', () => {
-            link
-                .attr('x1', d => d.source.x)
-                .attr('y1', d => d.source.y)
-                .attr('x2', d => d.target.x)
-                .attr('y2', d => d.target.y);
-
+            link.attr('x1', d => d.source.x).attr('y1', d => d.source.y)
+                .attr('x2', d => d.target.x).attr('y2', d => d.target.y);
             node.attr('transform', d => `translate(${d.x},${d.y})`);
         });
 
-        return () => {
-            simulation.stop();
-        };
+        return () => { simulation.stop(); };
     }, [graphData]);
-
-    const progressPercent = progress.total > 0 ? Math.round((progress.scanned / progress.total) * 100) : 0;
 
     return (
         <div className="max-w-7xl mx-auto px-4 py-8 space-y-6">
@@ -210,31 +162,21 @@ export default function NetworkPage() {
                 <h1 style={{ fontSize: 20, fontWeight: 700, color: 'var(--text-dark)' }}>Network Graph</h1>
             </div>
 
-            {/* Scan Progress */}
-            {scanning && (
+            {loading && (
                 <div className="card" style={{ padding: 20 }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                        <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-body)', display: 'flex', alignItems: 'center', gap: 6 }}>
-                            <IconScan size={14} color="var(--green)" />
-                            {progress.phase === 'scanning'
-                                ? 'Phase 1: Scanning transactions...'
-                                : `Phase 2: Getting balances for ${progress.total} addresses...`
-                            }
-                        </span>
-                        <span style={{ fontSize: 12, fontFamily: 'monospace', color: 'var(--green)' }}>
-                            {progress.scanned.toLocaleString()} / {progress.total.toLocaleString()} ({progressPercent}%)
-                        </span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <div className="skeleton" style={{ width: 20, height: 20, borderRadius: '50%' }}></div>
+                        <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>Loading network data...</span>
                     </div>
-                    <div className="progress-bar">
-                        <div className="progress-fill" style={{ width: `${progressPercent}%` }}></div>
-                    </div>
-                    <p style={{ fontSize: 11, color: 'var(--text-light)', marginTop: 8 }}>
-                        {progress.addressCount} address(es) · {progress.edgeCount} interaction(s)
-                    </p>
                 </div>
             )}
 
-            {/* Info bar */}
+            {error && (
+                <div className="error-banner">
+                    <p style={{ color: 'var(--red)', fontWeight: 600 }}>Error: {error}</p>
+                </div>
+            )}
+
             {graphData && (
                 <div className="card" style={{ padding: '12px 20px', display: 'flex', gap: 24, alignItems: 'center', flexWrap: 'wrap' }}>
                     <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
@@ -249,32 +191,18 @@ export default function NetworkPage() {
                 </div>
             )}
 
-            {/* Graph SVG */}
             <div className="card" ref={containerRef} style={{ overflow: 'hidden', background: '#fafbfc', position: 'relative' }}>
-                {!graphData && !scanning && (
-                    <div style={{ padding: 60, textAlign: 'center', color: 'var(--text-muted)' }}>
-                        No data available.
-                    </div>
+                {!graphData && !loading && (
+                    <div style={{ padding: 60, textAlign: 'center', color: 'var(--text-muted)' }}>No data available.</div>
                 )}
                 <svg ref={svgRef} style={{ display: 'block', width: '100%', minHeight: 600 }} />
             </div>
 
-            {/* Floating tooltip (DOM, not React state — avoids re-render trembling) */}
-            <div
-                ref={tooltipRef}
-                style={{
-                    display: 'none',
-                    position: 'fixed',
-                    pointerEvents: 'none',
-                    zIndex: 9999,
-                    background: '#fff',
-                    border: '1px solid var(--border-color)',
-                    borderRadius: 8,
-                    padding: '10px 14px',
-                    boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
-                    maxWidth: 360,
-                }}
-            />
+            <div ref={tooltipRef} style={{
+                display: 'none', position: 'fixed', pointerEvents: 'none', zIndex: 9999,
+                background: '#fff', border: '1px solid var(--border-color)', borderRadius: 8,
+                padding: '10px 14px', boxShadow: '0 4px 12px rgba(0,0,0,0.1)', maxWidth: 360,
+            }} />
         </div>
     );
 }

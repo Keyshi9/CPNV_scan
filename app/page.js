@@ -10,7 +10,6 @@ import {
   getRecentTransactions
 } from '@/lib/ethereum';
 import { IconBlock, IconTx, IconGas, IconGlobe, IconLink, IconChart, IconShield, IconSearch } from '@/components/Icons';
-import Heatmap from '@/components/Heatmap';
 import { ethers } from 'ethers';
 
 function timeAgo(timestamp) {
@@ -208,9 +207,6 @@ export default function Dashboard() {
             <IconBlock size={12} color="var(--text-muted)" /> Last Block: <strong>#{latestBlock.toLocaleString()}</strong>
           </span>
         </div>
-
-        {/* ========== TRANSACTION HEATMAP ========== */}
-        <Heatmap />
 
         {/* ========== LATEST BLOCKS + LATEST TXS ========== */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
