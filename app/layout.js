@@ -31,6 +31,7 @@ export default function RootLayout({ children }) {
               <a href="/blocks">Blocks</a>
               <a href="/transactions">Transactions</a>
               <a href="/tokens">Tokens</a>
+              <a href="/network">Network</a>
             </div>
           </div>
         </nav>
